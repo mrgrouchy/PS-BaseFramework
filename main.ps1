@@ -6,33 +6,31 @@
     and progress reporting to the console, with human-readable start/end timestamps and duration.
 #>
 
-[CmdletBinding(SupportsShouldProcess=$true, SupportsPaging=$false, ConfirmImpact='Medium')]
+[CmdletBinding()]
 param(
-    [Parameter(Mandatory=$false)]
-    [string] $LogFile = "$PSScriptRoot\$(Split-Path -Leaf $PSCommandPath).log",
-    [Parameter(Mandatory=$false)]
-    [ValidateRange(0,100)]
-    [int] $ProgressPercent = 0
+    [string] $LogFile = (Join-Path $PSScriptRoot "$(Split-Path -Leaf $PSCommandPath).log")
 )
 
 # Enforce strict mode
 Set-StrictMode -Version Latest
+
+$script:TimestampFormat = 'yyyy-MM-dd HH:mm:ss'
+$script:ScriptStartTime = $null
 
 # Initialize transcript/logging
 function Initialize-Log {
     param(
         [string] $Path
     )
-    if (-not (Test-Path -Path (Split-Path $Path))) {
-        New-Item -ItemType Directory -Path (Split-Path $Path) -Force | Out-Null
-    }
+    $logDir = Split-Path $Path
+    New-Item -ItemType Directory -Path $logDir -Force | Out-Null
     # Record start time
-    $Global:ScriptStartTime = Get-Date
+    $script:ScriptStartTime = Get-Date
     # Start transcript to capture all output
     Start-Transcript -Path $Path -Append | Out-Null
     Write-Verbose "Logging initialized. Log file: $Path"
     # Log script start with human-readable timestamp
-    Write-Log -Message "Start time: $($Global:ScriptStartTime.ToString('yyyy-MM-dd HH:mm:ss'))" -Level INFO
+    Write-Log -Message "Start time: $($script:ScriptStartTime.ToString($script:TimestampFormat))" -Level INFO
 }
 
 # Write log entry
@@ -42,12 +40,11 @@ function Write-Log {
         [ValidateSet('INFO','WARN','ERROR','DEBUG')] [string] $Level = 'INFO'
     )
     # Timestamp with readable format
-    $timestamp = Get-Date -Format 'yyyy-MM-dd HH:mm:ss'
-    $entry = "[$timestamp] [$Level] $Message"
-    # Always log to verbose stream (captured in transcript)
-    Write-Verbose $entry
-    # Only display to console for non-DEBUG levels
-    if ($Level -ne 'DEBUG') {
+    $entry = "[$(Get-Date -Format $script:TimestampFormat)] [$Level] $Message"
+    # DEBUG goes to verbose stream only; all others go to host (captured by transcript)
+    if ($Level -eq 'DEBUG') {
+        Write-Verbose $entry
+    } else {
         Write-Host $entry
     }
 }
@@ -108,12 +105,10 @@ catch {
     throw
 }
 finally {
-    # Record end time
+    # Record end time and calculate duration
     $endTime = Get-Date
-    # Calculate duration
-    $duration = $endTime - $Global:ScriptStartTime
-    # Log script end with human-readable timestamp and duration
-    Write-Log -Message "End time: $($endTime.ToString('yyyy-MM-dd HH:mm:ss'))" -Level INFO
-    Write-Log -Message "Total runtime: $([math]::Round($duration.TotalSeconds,3)) seconds" -Level INFO
+    $duration = $endTime - $script:ScriptStartTime
+    Write-Log -Message "End time: $($endTime.ToString($script:TimestampFormat))" -Level INFO
+    Write-Log -Message "Total runtime: $($duration.TotalSeconds.ToString('F3')) seconds" -Level INFO
     Stop-Transcript | Out-Null
 }
