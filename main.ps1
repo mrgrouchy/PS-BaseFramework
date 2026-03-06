@@ -1,119 +1,142 @@
 <#
 .SYNOPSIS
-    Base framework for PowerShell scripts with verbose logging and progress display.
+    Reusable wrapper template for scripts with logging and progress reporting.
 .DESCRIPTION
-    This template provides a standard structure: parameter handling, logging to file, verbose output,
-    and progress reporting to the console, with human-readable start/end timestamps and duration.
+    Provides a consistent execution wrapper with:
+      - parameter handling
+      - transcript/log output
+      - progress updates
+      - start/end timing and runtime reporting
+    Replace the body of Invoke-TemplateWorkload with your real workload logic.
 #>
 
 [CmdletBinding(SupportsShouldProcess=$true, SupportsPaging=$false, ConfirmImpact='Medium')]
 param(
     [Parameter(Mandatory=$false)]
     [string] $LogFile = "$PSScriptRoot\$(Split-Path -Leaf $PSCommandPath).log",
+
     [Parameter(Mandatory=$false)]
     [ValidateRange(0,100)]
-    [int] $ProgressPercent = 0
+    [int] $ProgressPercent = 0,
+
+    [Parameter(Mandatory=$false)]
+    [string] $Activity = 'Custom Task',
+
+    [Parameter(Mandatory=$false)]
+    [switch] $NoTranscript
 )
 
-# Enforce strict mode
 Set-StrictMode -Version Latest
 
-# Initialize transcript/logging
+$script:ScriptStartTime = Get-Date
+$script:TranscriptStarted = $false
+
 function Initialize-Log {
     param(
+        [Parameter(Mandatory=$true)]
+        [ValidateNotNullOrEmpty()]
         [string] $Path
     )
-    if (-not (Test-Path -Path (Split-Path $Path))) {
-        New-Item -ItemType Directory -Path (Split-Path $Path) -Force | Out-Null
+
+    $parentDir = Split-Path -Path $Path -Parent
+    if ($parentDir -and -not (Test-Path -LiteralPath $parentDir)) {
+        New-Item -ItemType Directory -Path $parentDir -Force | Out-Null
     }
-    # Record start time
-    $Global:ScriptStartTime = Get-Date
-    # Start transcript to capture all output
-    Start-Transcript -Path $Path -Append | Out-Null
+
+    if (-not $NoTranscript) {
+        Start-Transcript -Path $Path -Append | Out-Null
+        $script:TranscriptStarted = $true
+    }
+
     Write-Verbose "Logging initialized. Log file: $Path"
-    # Log script start with human-readable timestamp
-    Write-Log -Message "Start time: $($Global:ScriptStartTime.ToString('yyyy-MM-dd HH:mm:ss'))" -Level INFO
+    Write-Log -Message "Start time: $($script:ScriptStartTime.ToString('yyyy-MM-dd HH:mm:ss'))" -Level INFO
 }
 
-# Write log entry
 function Write-Log {
     param(
+        [Parameter(Mandatory=$true)]
+        [ValidateNotNullOrEmpty()]
         [string] $Message,
+
         [ValidateSet('INFO','WARN','ERROR','DEBUG')] [string] $Level = 'INFO'
     )
-    # Timestamp with readable format
+
     $timestamp = Get-Date -Format 'yyyy-MM-dd HH:mm:ss'
     $entry = "[$timestamp] [$Level] $Message"
-    # Always log to verbose stream (captured in transcript)
+
     Write-Verbose $entry
-    # Only display to console for non-DEBUG levels
     if ($Level -ne 'DEBUG') {
-        Write-Host $entry
+        Write-Information -MessageData $entry -InformationAction Continue
     }
 }
 
-# Report progress
 function Show-ProgressBar {
     param(
+        [Parameter(Mandatory=$false)]
+        [ValidateRange(0,100)]
         [int] $PercentComplete,
+
         [string] $Activity = 'Processing',
-        [string] $Status = ''
+
+        [string] $Status = '',
+
+        [switch] $Completed
     )
+
+    if ($Completed) {
+        Write-Progress -Activity $Activity -Completed
+        return
+    }
+
     Write-Progress -Activity $Activity -Status $Status -PercentComplete $PercentComplete
 }
 
-# Main script logic
+function Invoke-TemplateWorkload {
+    param(
+        [Parameter(Mandatory=$true)]
+        [string] $ActivityName
+    )
+
+    # Replace this block with your real workload.
+    for ($i = $ProgressPercent; $i -le 100; $i += 10) {
+        Start-Sleep -Milliseconds 200
+        Show-ProgressBar -PercentComplete $i -Activity $ActivityName -Status "Step $i% complete"
+        Write-Log -Message "Completed $i% of custom task." -Level DEBUG
+    }
+}
+
 try {
     Initialize-Log -Path $LogFile
 
-    # --------------------------------
-    # Example workload structure:
-    #  1. Pre-Workload Setup
-    #  2. CUSTOM WORKLOAD BLOCK (add your code here)
-    #  3. Post-Workload Cleanup/Logging
-    # --------------------------------
-
-    # 1. Pre-Workload Setup
     Write-Log -Message 'Beginning workload execution...' -Level INFO
-    # Initialize progress
-    Show-ProgressBar -PercentComplete 0 -Activity 'Custom Task' -Status 'Starting'
+    Show-ProgressBar -PercentComplete $ProgressPercent -Activity $Activity -Status 'Starting'
 
-    # 2. CUSTOM WORKLOAD BLOCK
-    <#
-        Add your custom processing logic below.
-        For example:
-          - Iterate over input items
-          - Call external APIs or cmdlets
-          - Perform file operations, database queries, etc.
-
-        Use Write-Log -Level INFO/WARN/ERROR for high-level messages
-        Use Write-Log -Level DEBUG for detailed diagnostics (not shown on console)
-        Use Show-ProgressBar to update progress as needed.
-    #>
-    for ($i = 0; $i -le 100; $i += 10) {
-        # Simulated work step
-        Start-Sleep -Milliseconds 200
-        # Update progress
-        Show-ProgressBar -PercentComplete $i -Activity 'Custom Task' -Status "Step $i% complete"
-        Write-Log -Message "Completed $i% of custom task." -Level DEBUG
+    if ($PSCmdlet.ShouldProcess($Activity, 'Execute workload')) {
+        Invoke-TemplateWorkload -ActivityName $Activity
+        Show-ProgressBar -PercentComplete 100 -Activity $Activity -Status 'Completed'
+        Write-Log -Message 'Custom workload completed successfully.' -Level INFO
     }
-
-    # 3. Post-Workload Cleanup/Logging
-    Show-ProgressBar -PercentComplete 100 -Activity 'Custom Task' -Status 'Completed'
-    Write-Log -Message 'Custom workload completed successfully.' -Level INFO
-
+    else {
+        Write-Log -Message 'Workload execution skipped by ShouldProcess.' -Level WARN
+    }
 }
 catch {
     Write-Log -Message "An error occurred: $_" -Level ERROR
     throw
 }
 finally {
-    # Record end time
     $endTime = Get-Date
-    # Calculate duration
-    $duration = $endTime - $Global:ScriptStartTime
-    # Log script end with human-readable timestamp and duration
+    $duration = $endTime - $script:ScriptStartTime
     Write-Log -Message "End time: $($endTime.ToString('yyyy-MM-dd HH:mm:ss'))" -Level INFO
     Write-Log -Message "Total runtime: $([math]::Round($duration.TotalSeconds,3)) seconds" -Level INFO
-    Stop-Transcript | Out-Null
+    Show-ProgressBar -Activity $Activity -Completed
+
+    if ($script:TranscriptStarted) {
+        try {
+            Stop-Transcript | Out-Null
+        }
+        catch {
+            Write-Warning "Unable to stop transcript cleanly: $_"
+        }
+    }
 }
