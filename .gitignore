@@ -1,1 +1,28 @@
-/main.ps1.log
+*.log
+*.tmp
+*.bak
+*.orig
+
+# PowerShell output and artifacts
+*.psd1.bak
+*.psm1.bak
+*.ps1.bak
+
+# Editor and IDE
+.vscode/
+.idea/
+*.code-workspace
+
+# OS files
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Test and coverage artifacts
+TestResults/
+coverage/
+.coverage
+
+# Local environment/config
+.env
+.env.*
